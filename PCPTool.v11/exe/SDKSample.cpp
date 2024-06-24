@@ -3380,7 +3380,7 @@ or in the machine context.
         hr = S_OK;
         BYTE pubKey[512] = {0};
         BCRYPT_RSAKEY_BLOB* pPubKey = (BCRYPT_RSAKEY_BLOB*) pubKey;
-        BYTE pubKeyDigest[SHA1_DIGEST_SIZE] = {0};
+        BYTE pubKeyDigest[SHA256_DIGEST_SIZE] = {0};
 
         while(SUCCEEDED(hr))
         {
@@ -3482,7 +3482,7 @@ or in the machine context.
                                   pPubKey->cbModulus +
                                   pPubKey->cbPrime1 +
                                   pPubKey->cbPrime2) ||
-                   (FAILED(hr = TpmAttiShaHash(BCRYPT_SHA1_ALGORITHM,
+                   (FAILED(hr = TpmAttiShaHash(BCRYPT_SHA256_ALGORITHM,
                                                             NULL,
                                                             0,
                                                             &pubKey[sizeof(BCRYPT_RSAKEY_BLOB) +
@@ -3510,12 +3510,12 @@ or in the machine context.
                 PcpToolLevelPrefix(2);
                 wprintf(L"<KeyLength>%u</KeyLength>\n", keyLength);
                 PcpToolLevelPrefix(2);
-                wprintf(L"<PubKeyDigest>");
+                wprintf(L"<PubKeyDigestSha256>");
                 for(UINT32 n = 0; n < sizeof(pubKeyDigest); n++)
                 {
                     wprintf(L"%02x", pubKeyDigest[n]);
                 }
-                wprintf(L"</PubKeyDigest>\n");
+                wprintf(L"</PubKeyDigestSha256>\n");
                 PcpToolLevelPrefix(2);
                 switch(dwKeyUsage & 0x0000ffff)
                 {
