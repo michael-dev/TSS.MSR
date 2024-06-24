@@ -3380,7 +3380,8 @@ or in the machine context.
         hr = S_OK;
         BYTE pubKey[512] = {0};
         BCRYPT_RSAKEY_BLOB* pPubKey = (BCRYPT_RSAKEY_BLOB*) pubKey;
-        BYTE pubKeyDigest[SHA256_DIGEST_SIZE] = {0};
+        BYTE pubKeyDigest[SHA1_DIGEST_SIZE] = {0};
+        BYTE pubKeyDigest256[SHA256_DIGEST_SIZE] = { 0 };
 
         while(SUCCEEDED(hr))
         {
@@ -3482,7 +3483,7 @@ or in the machine context.
                                   pPubKey->cbModulus +
                                   pPubKey->cbPrime1 +
                                   pPubKey->cbPrime2) ||
-                   (FAILED(hr = TpmAttiShaHash(BCRYPT_SHA256_ALGORITHM,
+                   (FAILED(hr = TpmAttiShaHash(BCRYPT_SHA1_ALGORITHM,
                                                             NULL,
                                                             0,
                                                             &pubKey[sizeof(BCRYPT_RSAKEY_BLOB) +
@@ -3490,7 +3491,16 @@ or in the machine context.
                                                             pPubKey->cbModulus,
                                                             pubKeyDigest,
                                                             sizeof(pubKeyDigest),
-                                                            (PUINT32)&cbRequired))))
+                                                            (PUINT32)&cbRequired))) ||
+                    (FAILED(hr = TpmAttiShaHash(BCRYPT_SHA256_ALGORITHM,
+                        NULL,
+                        0,
+                        &pubKey[sizeof(BCRYPT_RSAKEY_BLOB) +
+                        pPubKey->cbPublicExp],
+                        pPubKey->cbModulus,
+                        pubKeyDigest256,
+                        sizeof(pubKeyDigest256),
+                        (PUINT32)&cbRequired))))
                 {
                     hr = E_FAIL;
                     goto Cleanup;
@@ -3510,10 +3520,25 @@ or in the machine context.
                 PcpToolLevelPrefix(2);
                 wprintf(L"<KeyLength>%u</KeyLength>\n", keyLength);
                 PcpToolLevelPrefix(2);
-                wprintf(L"<PubKeyDigestSha256>");
+                wprintf(L"<PubKeyModulus>");
+                for (UINT32 n = 0; n < pPubKey->cbModulus; n++)
+                {
+                    wprintf(L"%02x", pubKey[sizeof(BCRYPT_RSAKEY_BLOB) +
+                        pPubKey->cbPublicExp+n]);
+                }
+                wprintf(L"</PubKeyModulus>\n");
+                PcpToolLevelPrefix(2);
+                wprintf(L"<PubKeyDigestSha>");
                 for(UINT32 n = 0; n < sizeof(pubKeyDigest); n++)
                 {
                     wprintf(L"%02x", pubKeyDigest[n]);
+                }
+                wprintf(L"</PubKeyDigestSha>\n");
+                PcpToolLevelPrefix(2);
+                wprintf(L"<PubKeyDigestSha256>");
+                for (UINT32 n = 0; n < sizeof(pubKeyDigest256); n++)
+                {
+                    wprintf(L"%02x", pubKeyDigest256[n]);
                 }
                 wprintf(L"</PubKeyDigestSha256>\n");
                 PcpToolLevelPrefix(2);
