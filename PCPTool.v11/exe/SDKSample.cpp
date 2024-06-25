@@ -3476,35 +3476,117 @@ or in the machine context.
                 {
                     goto Cleanup;
                 }
-                if((cbRequired < sizeof(BCRYPT_RSAKEY_BLOB)) ||
-                   (pPubKey->Magic != BCRYPT_RSAPUBLIC_MAGIC) ||
-                   (cbRequired != sizeof(BCRYPT_RSAKEY_BLOB) +
-                                  pPubKey->cbPublicExp +
-                                  pPubKey->cbModulus +
-                                  pPubKey->cbPrime1 +
-                                  pPubKey->cbPrime2) ||
-                   (FAILED(hr = TpmAttiShaHash(BCRYPT_SHA1_ALGORITHM,
-                                                            NULL,
-                                                            0,
-                                                            &pubKey[sizeof(BCRYPT_RSAKEY_BLOB) +
+                if ((cbRequired < sizeof(BCRYPT_RSAKEY_BLOB)) ||
+                    (pPubKey->Magic != BCRYPT_RSAPUBLIC_MAGIC) ||
+                    (cbRequired != sizeof(BCRYPT_RSAKEY_BLOB) +
+                        pPubKey->cbPublicExp +
+                        pPubKey->cbModulus +
+                        pPubKey->cbPrime1 +
+                        pPubKey->cbPrime2)) {
+                    hr = E_FAIL;
+                    goto Cleanup;
+                }
+
+                // build ASN1
+                // 30 - Tag
+                // 82 - 2 Bytes for length
+                // 01 0A - length of payload
+                // -- first entry
+                // 02 - Tag
+                // 82 - 2 Bytes for length
+                // 01 01 - length of payload
+                // int modules. prefix 00 if msb is set in first byte
+                // -- second entry
+                // 02 - Tag
+                // 03 - lenght of payload
+                // 01 00 01 - exponent
+
+         
+
+                if (pubKey[sizeof(BCRYPT_RSAKEY_BLOB)] & 0x80 || pPubKey->cbPublicExp > 127) {
+                    // exp too big
+                    PcpToolLevelPrefix(1);
+                    wprintf(L"too big public exponent\n");
+                    goto Cleanup;
+                }
+
+                int modulesNeedsPrefix = pubKey[sizeof(BCRYPT_RSAKEY_BLOB) +
+                    pPubKey->cbPublicExp] & 0x80;
+
+                int modulusLen = pPubKey->cbModulus + (modulesNeedsPrefix ? 1 : 0);
+
+                if (modulusLen <= 256 || modulusLen > 256 * 256) {
+                    // modules bad lan range for asn.1 fixed scheme
+                    PcpToolLevelPrefix(1);
+                    wprintf(L"bad modules for common asn1 scheme\n");
+                    goto Cleanup;
+                }
+
+                int seqPayloadLen = 6 + pPubKey->cbPublicExp + modulusLen;
+                int asn1len = 4 + seqPayloadLen;
+                byte* asn1data = (byte*) calloc(1, asn1len);
+                size_t asn1pos = 0;
+                asn1data[asn1pos++] = 0x30;
+                asn1data[asn1pos++] = 0x82;
+                asn1data[asn1pos++] = seqPayloadLen / 256;
+                asn1data[asn1pos++] = seqPayloadLen & 255;
+
+                asn1data[asn1pos++] = 0x02;
+                asn1data[asn1pos++] = 0x82;
+                asn1data[asn1pos++] = modulusLen / 256;
+                asn1data[asn1pos++] = modulusLen & 255;
+                if (modulesNeedsPrefix)
+                    asn1data[asn1pos++] = 0x00;
+                for (UINT32 n = 0; n < pPubKey->cbModulus; n++)
+                    asn1data[asn1pos++] = pubKey[sizeof(BCRYPT_RSAKEY_BLOB) + pPubKey->cbPublicExp + n];
+
+                asn1data[asn1pos++] = 0x02;
+                asn1data[asn1pos++] = pPubKey->cbPublicExp & 0x7f;
+                for (UINT32 n = 0; n < pPubKey->cbPublicExp; n++)
+                    asn1data[asn1pos++] = pubKey[sizeof(BCRYPT_RSAKEY_BLOB) + n];
+
+                if (asn1pos != asn1len) {
+                    // exp too big
+                    PcpToolLevelPrefix(1);
+                    wprintf(L"asn1pos %zd != asn1len %d\n", asn1pos, asn1len);
+                    free(asn1data);
+                    asn1data = NULL;
+                    goto Cleanup;
+                }
+
+                /*
+                *  &pubKey[sizeof(BCRYPT_RSAKEY_BLOB) +
                                                                     pPubKey->cbPublicExp],
                                                             pPubKey->cbModulus,
+                */
+
+                if ((FAILED(hr = TpmAttiShaHash(BCRYPT_SHA1_ALGORITHM,
+                                                            NULL,
+                                                            0,
+                                                            asn1data,
+                                                            asn1pos,
                                                             pubKeyDigest,
                                                             sizeof(pubKeyDigest),
                                                             (PUINT32)&cbRequired))) ||
                     (FAILED(hr = TpmAttiShaHash(BCRYPT_SHA256_ALGORITHM,
                         NULL,
                         0,
-                        &pubKey[sizeof(BCRYPT_RSAKEY_BLOB) +
-                        pPubKey->cbPublicExp],
-                        pPubKey->cbModulus,
+                        asn1data,
+                        asn1pos,
                         pubKeyDigest256,
                         sizeof(pubKeyDigest256),
                         (PUINT32)&cbRequired))))
                 {
+                    free(asn1data);
+                    asn1data = NULL;
                     hr = E_FAIL;
                     goto Cleanup;
                 }
+
+                free(asn1data);
+                asn1data = NULL;
+
+                
 
                 PcpToolLevelPrefix(1);
                 wprintf(L"<Key>\n");
